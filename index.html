@@ -102,38 +102,19 @@
 </head>
 <body>
 
-<!-- Password Gate -->
-<div id="passwordGate" style="position:fixed;inset:0;background:#f9f9f8;z-index:9999;display:flex;align-items:center;justify-content:center;padding:2rem;">
-  <div style="background:white;border:1px solid #e0ded8;border-radius:12px;padding:2.5rem 2rem;width:100%;max-width:360px;text-align:center;">
-    <div style="width:52px;height:52px;background:#f5e6e6;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 1.25rem;font-size:22px;">🔒</div>
-    <h2 style="font-size:18px;font-weight:600;color:#2c2c2a;margin-bottom:6px;">douglasmossmd.com</h2>
-    <p style="font-size:13px;color:#6b6966;margin-bottom:1.5rem;">This site is password protected.</p>
-    <input id="pwInput" type="password" placeholder="Enter password" autofocus style="width:100%;padding:9px 12px;font-size:14px;font-family:inherit;border:1px solid #e0ded8;border-radius:7px;outline:none;margin-bottom:10px;color:#1a1a18;" />
-    <div id="pwError" style="font-size:12px;color:#993c1d;margin-bottom:10px;display:none;">Incorrect password. Try again.</div>
-    <button onclick="checkPassword()" style="width:100%;padding:9px;background:#800000;color:white;border:none;border-radius:7px;font-size:14px;font-weight:500;font-family:inherit;cursor:pointer;">Enter</button>
+<!-- Edit Mode PIN Gate -->
+<div class="modal-overlay" id="pinOverlay">
+  <div class="modal" style="max-width:340px;text-align:center;">
+    <h3 style="margin-bottom:0.5rem;">Enter PIN</h3>
+    <p style="font-size:13px;color:#6b6966;margin-bottom:1.25rem;">Enter your PIN to enable edit mode.</p>
+    <input id="pinInput" type="password" inputmode="numeric" placeholder="PIN" autocomplete="off" style="width:100%;padding:9px 12px;font-size:14px;font-family:inherit;border:1px solid #e0ded8;border-radius:7px;outline:none;margin-bottom:10px;color:#1a1a18;text-align:center;letter-spacing:0.15em;" />
+    <div id="pinError" style="font-size:12px;color:#993c1d;margin-bottom:10px;display:none;">Incorrect PIN. Try again.</div>
+    <div class="modal-footer" style="justify-content:center;">
+      <button class="btn btn-outline" onclick="window.closePinModal && window.closePinModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="window.checkPin && window.checkPin()">Unlock</button>
+    </div>
   </div>
 </div>
-<script>
-  (function() {
-    if (localStorage.getItem('dm_auth') === 'ok') {
-      document.getElementById('passwordGate').style.display = 'none';
-    }
-    document.addEventListener('keydown', function(e) {
-      if (e.key === 'Enter' && document.getElementById('passwordGate').style.display !== 'none') checkPassword();
-    });
-  })();
-  function checkPassword() {
-    var val = document.getElementById('pwInput').value;
-    if (val === 'douglasmossmd') {
-      localStorage.setItem('dm_auth', 'ok');
-      document.getElementById('passwordGate').style.display = 'none';
-    } else {
-      document.getElementById('pwError').style.display = 'block';
-      document.getElementById('pwInput').value = '';
-      document.getElementById('pwInput').focus();
-    }
-  }
-</script>
 
 <header>
   <div class="header-inner">
@@ -370,13 +351,55 @@
     });
   }
 
-  window.toggleAdmin = function() {
-    isAdmin = !isAdmin;
+  // SHA-256 hash of the edit-mode PIN. Not shown in plain text in the source.
+  const PIN_HASH = '30e2fdaa7748f8af49b4725199b69e939dc835bd2e4f37d40924da88132161f1';
+
+  async function sha256(text) {
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+    return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  function setAdmin(on) {
+    isAdmin = on;
     const btn = document.getElementById('adminBtn');
     btn.textContent = isAdmin ? 'Exit edit mode' : 'Edit mode';
     btn.classList.toggle('active', isAdmin);
     renderProjects();
+  }
+
+  window.toggleAdmin = function() {
+    if (isAdmin) { setAdmin(false); return; }
+    if (sessionStorage.getItem('dm_edit_auth') === 'ok') { setAdmin(true); return; }
+    document.getElementById('pinOverlay').classList.add('open');
+    setTimeout(() => document.getElementById('pinInput').focus(), 50);
   };
+
+  window.closePinModal = function() {
+    document.getElementById('pinOverlay').classList.remove('open');
+    document.getElementById('pinInput').value = '';
+    document.getElementById('pinError').style.display = 'none';
+  };
+
+  window.checkPin = async function() {
+    const val = document.getElementById('pinInput').value;
+    const hash = await sha256(val);
+    if (hash === PIN_HASH) {
+      sessionStorage.setItem('dm_edit_auth', 'ok');
+      window.closePinModal();
+      setAdmin(true);
+    } else {
+      document.getElementById('pinError').style.display = 'block';
+      document.getElementById('pinInput').value = '';
+      document.getElementById('pinInput').focus();
+    }
+  };
+
+  document.getElementById('pinOverlay').addEventListener('click', function(e) {
+    if (e.target === this) window.closePinModal();
+  });
+  document.getElementById('pinInput').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') window.checkPin();
+  });
 
   window.openModal = function() {
     editingId = null;
@@ -460,6 +483,7 @@
     if (e.key === 'Escape') {
       window.closeModal();
       document.getElementById('deleteOverlay').classList.remove('open');
+      window.closePinModal();
     }
   });
 
