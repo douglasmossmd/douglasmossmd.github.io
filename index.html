@@ -119,6 +119,39 @@
 </head>
 <body>
 
+<!-- Sitewide Password Gate (shown on every visit, no persistence) -->
+<div id="passwordGate" style="position:fixed;inset:0;background:#f9f9f8;z-index:9999;display:flex;align-items:center;justify-content:center;padding:2rem;">
+  <div style="background:white;border:1px solid #e0ded8;border-radius:12px;padding:2.5rem 2rem;width:100%;max-width:360px;text-align:center;">
+    <div style="width:52px;height:52px;background:#f5e6e6;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 1.25rem;font-size:22px;">🔒</div>
+    <h2 style="font-size:18px;font-weight:600;color:#2c2c2a;margin-bottom:6px;">douglasmossmd.com</h2>
+    <p style="font-size:13px;color:#6b6966;margin-bottom:1.5rem;">This site is password protected.</p>
+    <input id="pwInput" type="password" placeholder="Enter password" autofocus autocomplete="off" style="width:100%;padding:9px 12px;font-size:14px;font-family:inherit;border:1px solid #e0ded8;border-radius:7px;outline:none;margin-bottom:10px;color:#1a1a18;" />
+    <div id="pwError" style="font-size:12px;color:#993c1d;margin-bottom:10px;display:none;">Incorrect password. Try again.</div>
+    <button onclick="checkPassword()" style="width:100%;padding:9px;background:#800000;color:white;border:none;border-radius:7px;font-size:14px;font-weight:500;font-family:inherit;cursor:pointer;">Enter</button>
+  </div>
+</div>
+<script>
+  const PW_HASH = '13e9c9eb98296ba7b7b7cbba81709a7fa8d21e8ca825a76e8621d1e1a39ac2bc';
+  async function pwSha256(text) {
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+    return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+  }
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' && document.getElementById('passwordGate').style.display !== 'none') checkPassword();
+  });
+  async function checkPassword() {
+    var val = document.getElementById('pwInput').value;
+    var hash = await pwSha256(val);
+    if (hash === PW_HASH) {
+      document.getElementById('passwordGate').style.display = 'none';
+    } else {
+      document.getElementById('pwError').style.display = 'block';
+      document.getElementById('pwInput').value = '';
+      document.getElementById('pwInput').focus();
+    }
+  }
+</script>
+
 <!-- Edit Mode PIN Gate -->
 <div class="modal-overlay" id="pinOverlay">
   <div class="modal" style="max-width:340px;text-align:center;">
@@ -302,7 +335,7 @@
 
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
-  import { getFirestore, collection, getDocs, addDoc, updateDoc, deleteDoc, doc }
+  import { getFirestore, collection, getDocs, addDoc, updateDoc, deleteDoc, doc, runTransaction }
     from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
 
   const firebaseConfig = {
@@ -358,6 +391,25 @@
     { name: 'EMedOps', desc: "A curated digital archive of emergency medicine operations literature — articles, frameworks, and case studies on throughput, physician productivity, staffing models, and department design, organized for practicing ED leaders.", status: 'concept', tags: ['ED Operations', 'Knowledge Base'], link: '', order: 6 },
   ];
 
+  // Guards seeding with a marker doc + transaction so two concurrent page
+  // loads can't both see an "empty" collection and each add a full copy of
+  // the seed data (which is how projects ended up duplicated).
+  async function seedOnce(name, seedArray) {
+    const markerRef = doc(db, 'meta', name + 'Seed');
+    let shouldSeed = false;
+    await runTransaction(db, async (tx) => {
+      const snap = await tx.get(markerRef);
+      if (!snap.exists()) {
+        shouldSeed = true;
+        tx.set(markerRef, { seededAt: Date.now() });
+      }
+    });
+    if (shouldSeed) {
+      for (const p of seedArray) await addDoc(collection(db, name), p);
+    }
+    return shouldSeed;
+  }
+
   async function loadProjects() {
     try {
       const snap = await getDocs(collection(db, 'projects'));
@@ -366,8 +418,8 @@
       projects.sort((a, b) => (a.order ?? 99) - (b.order ?? 99));
 
       if (projects.length === 0) {
-        for (const p of SEED) await addDoc(collection(db, 'projects'), p);
-        return loadProjects();
+        const seeded = await seedOnce('projects', SEED);
+        if (seeded) return loadProjects();
       }
       renderProjects();
     } catch (e) {
@@ -440,8 +492,8 @@
       snap.forEach(d => publications.push({ id: d.id, ...d.data() }));
 
       if (publications.length === 0) {
-        for (const p of PUB_SEED) await addDoc(collection(db, 'publications'), p);
-        return loadPublications();
+        const seeded = await seedOnce('publications', PUB_SEED);
+        if (seeded) return loadPublications();
       }
       renderPublications();
     } catch (e) {
