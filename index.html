@@ -182,19 +182,20 @@
 </header>
 
 <div class="hero">
-  <div class="hero-inner">
-    <div class="avatar">DM</div>
+  <div class="hero-inner" style="position:relative;">
+    <div class="avatar" id="heroAvatar">DM</div>
     <div class="hero-text">
-      <h1>Douglas Moss, MD</h1>
-      <p class="title">Emergency Medicine</p>
-      <p>Building data systems and operational tools at the intersection of emergency medicine and informatics — turning scheduling, billing, and operational data into actionable insight for ED leadership and providers.</p>
-      <div class="badge-row">
+      <h1 id="heroName">Douglas Moss, MD</h1>
+      <p class="title" id="heroTitle">Emergency Medicine</p>
+      <p id="heroBio">Building data systems and operational tools at the intersection of emergency medicine and informatics — turning scheduling, billing, and operational data into actionable insight for ED leadership and providers.</p>
+      <div class="badge-row" id="heroBadges">
         <span class="badge">Emergency Medicine</span>
         <span class="badge">ED Operations</span>
         <span class="badge">Physician Informatics</span>
         <span class="badge">Python · Streamlit</span>
       </div>
     </div>
+    <button class="admin-btn" id="editProfileBtn" style="display:none;position:absolute;top:0;right:0;" onclick="window.openProfileModal && window.openProfileModal()">Edit profile</button>
   </div>
 </div>
 
@@ -325,6 +326,40 @@
   </div>
 </div>
 
+<!-- Profile Edit Modal -->
+<div class="modal-overlay" id="profileModalOverlay">
+  <div class="modal">
+    <h3 style="margin-bottom:1.25rem;">Edit profile</h3>
+    <div class="form-group">
+      <label>Photo</label>
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px;">
+        <div id="profilePhotoPreview" style="width:56px;height:56px;border-radius:50%;background:var(--maroon-light);display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:600;color:var(--maroon);overflow:hidden;flex-shrink:0;">DM</div>
+        <input type="file" id="pPhoto" accept="image/*" style="font-size:12.5px;" />
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Name *</label>
+      <input type="text" id="pName" placeholder="e.g. Douglas Moss, MD, MBA" />
+    </div>
+    <div class="form-group">
+      <label>Title</label>
+      <input type="text" id="pJobTitle" placeholder="e.g. Emergency Medicine" />
+    </div>
+    <div class="form-group">
+      <label>Bio</label>
+      <textarea id="pBio" placeholder="A sentence or two about you."></textarea>
+    </div>
+    <div class="form-group">
+      <label>Badges (comma-separated)</label>
+      <input type="text" id="pBadges" placeholder="e.g. Emergency Medicine, ED Operations" />
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="window.closeProfileModal && window.closeProfileModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="window.saveProfile && window.saveProfile()">Save profile</button>
+    </div>
+  </div>
+</div>
+
 <!-- Publication Preview Modal -->
 <div class="modal-overlay" id="pubPreviewOverlay">
   <div class="modal" style="max-width:560px;">
@@ -352,7 +387,7 @@
 
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
-  import { getFirestore, collection, getDocs, addDoc, updateDoc, deleteDoc, doc, runTransaction }
+  import { getFirestore, collection, getDocs, addDoc, updateDoc, deleteDoc, doc, runTransaction, getDoc, setDoc }
     from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
   import { getAuth, signInWithEmailAndPassword, signOut, setPersistence, browserSessionPersistence }
     from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
@@ -707,6 +742,7 @@
     const btn = document.getElementById('adminBtn');
     btn.textContent = isAdmin ? 'Exit edit mode' : 'Edit mode';
     btn.classList.toggle('active', isAdmin);
+    document.getElementById('editProfileBtn').style.display = isAdmin ? '' : 'none';
     renderProjects();
     renderPublications();
   }
@@ -842,6 +878,7 @@
       window.closeModal();
       window.closePubModal();
       window.closePubPreview();
+      window.closeProfileModal();
       document.getElementById('deleteOverlay').classList.remove('open');
       window.closePinModal();
     }
@@ -858,8 +895,125 @@
     }
   }, 8000);
 
+  // ---- Profile (name / title / bio / badges / photo) ----
+  const PROFILE_DEFAULT = {
+    name: 'Douglas Moss, MD',
+    title: 'Emergency Medicine',
+    bio: "Building data systems and operational tools at the intersection of emergency medicine and informatics — turning scheduling, billing, and operational data into actionable insight for ED leadership and providers.",
+    badges: ['Emergency Medicine', 'ED Operations', 'Physician Informatics', 'Python · Streamlit'],
+    photoURL: '',
+  };
+  let profile = PROFILE_DEFAULT;
+
+  function getInitials(name) {
+    const words = (name || '').replace(/[,.]/g, '').split(/\s+/).filter(Boolean);
+    return words.slice(0, 2).map(w => w[0].toUpperCase()).join('') || 'DM';
+  }
+
+  async function loadProfile() {
+    try {
+      const ref = doc(db, 'profile', 'main');
+      const snap = await getDoc(ref);
+      if (snap.exists()) {
+        profile = snap.data();
+      } else {
+        await setDoc(ref, PROFILE_DEFAULT);
+        profile = PROFILE_DEFAULT;
+      }
+      renderProfile();
+    } catch (e) {
+      console.error('Error loading profile:', e.message);
+      renderProfile(); // fall back to defaults already in `profile`
+    }
+  }
+
+  function renderProfile() {
+    document.getElementById('heroName').textContent = profile.name || PROFILE_DEFAULT.name;
+    document.getElementById('heroTitle').textContent = profile.title || '';
+    document.getElementById('heroBio').textContent = profile.bio || '';
+    document.getElementById('heroBadges').innerHTML =
+      (profile.badges || []).map(b => `<span class="badge">${b}</span>`).join('');
+    const avatar = document.getElementById('heroAvatar');
+    if (profile.photoURL) {
+      avatar.innerHTML = `<img src="${profile.photoURL}" alt="${profile.name || ''}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`;
+    } else {
+      avatar.textContent = getInitials(profile.name);
+    }
+  }
+
+  window.openProfileModal = function() {
+    document.getElementById('pName').value = profile.name || '';
+    document.getElementById('pJobTitle').value = profile.title || '';
+    document.getElementById('pBio').value = profile.bio || '';
+    document.getElementById('pBadges').value = (profile.badges || []).join(', ');
+    document.getElementById('pPhoto').value = '';
+    const preview = document.getElementById('profilePhotoPreview');
+    if (profile.photoURL) {
+      preview.innerHTML = `<img src="${profile.photoURL}" style="width:100%;height:100%;object-fit:cover;">`;
+    } else {
+      preview.textContent = getInitials(profile.name);
+    }
+    document.getElementById('profileModalOverlay').classList.add('open');
+  };
+
+  window.closeProfileModal = function() {
+    document.getElementById('profileModalOverlay').classList.remove('open');
+  };
+
+  // Resize/compress the chosen photo client-side and return it as a small
+  // JPEG data URL, so it can be stored directly in the Firestore doc
+  // (no separate Firebase Storage setup/billing plan required).
+  function resizePhotoToDataUrl(file, maxSize) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const reader = new FileReader();
+      reader.onload = () => { img.src = reader.result; };
+      reader.onerror = reject;
+      img.onload = () => {
+        const scale = Math.min(1, maxSize / Math.max(img.width, img.height));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL('image/jpeg', 0.85));
+      };
+      img.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  window.saveProfile = async function() {
+    const name = document.getElementById('pName').value.trim();
+    if (!name) { alert('Please fill in a name.'); return; }
+    const data = {
+      name,
+      title: document.getElementById('pJobTitle').value.trim(),
+      bio: document.getElementById('pBio').value.trim(),
+      badges: document.getElementById('pBadges').value.split(',').map(t => t.trim()).filter(Boolean),
+      photoURL: profile.photoURL || '',
+    };
+    try {
+      const fileInput = document.getElementById('pPhoto');
+      if (fileInput.files && fileInput.files[0]) {
+        data.photoURL = await resizePhotoToDataUrl(fileInput.files[0], 500);
+      }
+      await setDoc(doc(db, 'profile', 'main'), data);
+      profile = data;
+      window.closeProfileModal();
+      renderProfile();
+    } catch (e) {
+      alert('Error saving profile: ' + e.message);
+    }
+  };
+
+  document.getElementById('profileModalOverlay').addEventListener('click', function(e) {
+    if (e.target === this) window.closeProfileModal();
+  });
+
   loadProjects();
   loadPublications();
+  loadProfile();
 </script>
 
 </body>
