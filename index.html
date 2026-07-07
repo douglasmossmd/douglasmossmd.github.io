@@ -89,10 +89,9 @@
     .pub-item { background: var(--white); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px 14px; }
     .pub-citation { font-size: 13.5px; color: var(--text); line-height: 1.65; }
     .pub-citation .pub-authors { color: var(--text-muted); }
-    .pub-citation .pub-title { color: var(--gray-800); font-weight: 500; }
-    .pub-citation a.pub-title { color: var(--maroon); text-decoration: none; }
-    .pub-citation a.pub-title:hover { text-decoration: underline; }
     .pub-citation .pub-venue { color: var(--text-muted); }
+    .pub-title-btn { font: inherit; font-weight: 500; color: var(--maroon); background: none; border: none; padding: 0; margin: 0; cursor: pointer; text-align: left; text-decoration: none; }
+    .pub-title-btn:hover { text-decoration: underline; }
     .pub-admin-btns { display: flex; gap: 6px; flex-wrap: wrap; padding-top: 8px; margin-top: 8px; border-top: 1px solid var(--gray-100); }
     .pub-add-row { border: 1.5px dashed var(--gray-200); border-radius: var(--radius-sm); padding: 12px 14px; display: flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer; transition: border-color 0.15s, background 0.15s; }
     .pub-add-row:hover { border-color: var(--maroon); background: var(--maroon-light); }
@@ -315,9 +314,26 @@
       <label>Link (optional)</label>
       <input type="url" id="pLink" placeholder="DOI / PubMed / article URL" />
     </div>
+    <div class="form-group">
+      <label>Summary (optional)</label>
+      <textarea id="pAbstract" placeholder="A short summary in your own words, shown in the preview before someone clicks through to the full article."></textarea>
+    </div>
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="window.closePubModal && window.closePubModal()">Cancel</button>
       <button class="btn btn-primary" onclick="window.savePublication && window.savePublication()">Save publication</button>
+    </div>
+  </div>
+</div>
+
+<!-- Publication Preview Modal -->
+<div class="modal-overlay" id="pubPreviewOverlay">
+  <div class="modal" style="max-width:560px;">
+    <h3 id="previewTitle" style="margin-bottom:6px;"></h3>
+    <p id="previewByline" style="font-size:12.5px;color:#6b6966;margin-bottom:1rem;"></p>
+    <p id="previewAbstract" style="font-size:13.5px;color:#1a1a18;line-height:1.7;margin-bottom:1.25rem;"></p>
+    <div class="modal-footer" style="justify-content:space-between;">
+      <button class="btn btn-outline" onclick="window.closePubPreview && window.closePubPreview()">Close</button>
+      <a id="previewOpenLink" class="btn btn-primary" href="#" target="_blank">Open article ↗</a>
     </div>
   </div>
 </div>
@@ -508,9 +524,7 @@
   }
 
   function buildPubItem(p, isFirst, isLast) {
-    const titleHtml = p.link
-      ? `<a class="pub-title" href="${p.link}" target="_blank">${p.title}</a>`
-      : `<span class="pub-title">${p.title}</span>`;
+    const titleHtml = `<button type="button" class="pub-title-btn" data-pub-preview="${p.id}">${p.title}</button>`;
     const authorsHtml = p.authors ? `<span class="pub-authors">${p.authors}</span> ` : '';
     const adminBtns = isAdmin ? `
       <div class="pub-admin-btns">
@@ -573,7 +587,36 @@
     container.querySelectorAll('[data-pub-down]').forEach(btn => {
       btn.addEventListener('click', () => window.movePub(btn.dataset.pubDown, 1));
     });
+    container.querySelectorAll('[data-pub-preview]').forEach(btn => {
+      btn.addEventListener('click', () => window.openPubPreview(btn.dataset.pubPreview));
+    });
   }
+
+  window.openPubPreview = function(id) {
+    const p = publications.find(x => x.id === id);
+    if (!p) return;
+    document.getElementById('previewTitle').textContent = p.title;
+    document.getElementById('previewByline').textContent =
+      [p.authors, p.venue].filter(Boolean).join(' — ');
+    document.getElementById('previewAbstract').textContent =
+      p.abstract && p.abstract.trim() ? p.abstract : 'No summary added yet.';
+    const openBtn = document.getElementById('previewOpenLink');
+    if (p.link) {
+      openBtn.href = p.link;
+      openBtn.style.display = '';
+    } else {
+      openBtn.style.display = 'none';
+    }
+    document.getElementById('pubPreviewOverlay').classList.add('open');
+  };
+
+  window.closePubPreview = function() {
+    document.getElementById('pubPreviewOverlay').classList.remove('open');
+  };
+
+  document.getElementById('pubPreviewOverlay').addEventListener('click', function(e) {
+    if (e.target === this) window.closePubPreview();
+  });
 
   window.movePub = async function(id, direction) {
     const p = publications.find(x => x.id === id);
@@ -604,6 +647,7 @@
     document.getElementById('pTitle').value = '';
     document.getElementById('pVenue').value = '';
     document.getElementById('pLink').value = '';
+    document.getElementById('pAbstract').value = '';
     document.getElementById('pubModalOverlay').classList.add('open');
     setTimeout(() => document.getElementById('pAuthors').focus(), 50);
   };
@@ -618,6 +662,7 @@
     document.getElementById('pTitle').value = p.title || '';
     document.getElementById('pVenue').value = p.venue || '';
     document.getElementById('pLink').value = p.link || '';
+    document.getElementById('pAbstract').value = p.abstract || '';
     document.getElementById('pubModalOverlay').classList.add('open');
     setTimeout(() => document.getElementById('pAuthors').focus(), 50);
   };
@@ -637,6 +682,7 @@
       title,
       venue: document.getElementById('pVenue').value.trim(),
       link: document.getElementById('pLink').value.trim(),
+      abstract: document.getElementById('pAbstract').value.trim(),
     };
     try {
       if (editingPubId) {
@@ -795,6 +841,7 @@
     if (e.key === 'Escape') {
       window.closeModal();
       window.closePubModal();
+      window.closePubPreview();
       document.getElementById('deleteOverlay').classList.remove('open');
       window.closePinModal();
     }
