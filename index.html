@@ -93,7 +93,7 @@
     .pub-citation a.pub-title { color: var(--maroon); text-decoration: none; }
     .pub-citation a.pub-title:hover { text-decoration: underline; }
     .pub-citation .pub-venue { color: var(--text-muted); }
-    .pub-admin-btns { display: flex; gap: 6px; padding-top: 8px; margin-top: 8px; border-top: 1px solid var(--gray-100); }
+    .pub-admin-btns { display: flex; gap: 6px; flex-wrap: wrap; padding-top: 8px; margin-top: 8px; border-top: 1px solid var(--gray-100); }
     .pub-add-row { border: 1.5px dashed var(--gray-200); border-radius: var(--radius-sm); padding: 12px 14px; display: flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer; transition: border-color 0.15s, background 0.15s; }
     .pub-add-row:hover { border-color: var(--maroon); background: var(--maroon-light); }
     .pub-add-row span { font-size: 13px; color: var(--text-muted); font-weight: 500; }
@@ -507,13 +507,15 @@
     }
   }
 
-  function buildPubItem(p) {
+  function buildPubItem(p, isFirst, isLast) {
     const titleHtml = p.link
       ? `<a class="pub-title" href="${p.link}" target="_blank">${p.title}</a>`
       : `<span class="pub-title">${p.title}</span>`;
     const authorsHtml = p.authors ? `<span class="pub-authors">${p.authors}</span> ` : '';
     const adminBtns = isAdmin ? `
       <div class="pub-admin-btns">
+        <button class="card-edit-btn" data-pub-up="${p.id}" ${isFirst ? 'disabled style="opacity:0.35;cursor:default;"' : ''} title="Move up">▲</button>
+        <button class="card-edit-btn" data-pub-down="${p.id}" ${isLast ? 'disabled style="opacity:0.35;cursor:default;"' : ''} title="Move down">▼</button>
         <button class="card-edit-btn" data-pub-edit="${p.id}">Edit</button>
         <button class="card-delete-btn" data-pub-delete="${p.id}">Delete</button>
       </div>` : '';
@@ -546,7 +548,7 @@
 
       const listEl = document.createElement('div');
       listEl.className = 'pub-list';
-      items.forEach(p => listEl.appendChild(buildPubItem(p)));
+      items.forEach((p, i) => listEl.appendChild(buildPubItem(p, i === 0, i === items.length - 1)));
       groupDiv.appendChild(listEl);
       container.appendChild(groupDiv);
     });
@@ -565,7 +567,34 @@
     container.querySelectorAll('[data-pub-delete]').forEach(btn => {
       btn.addEventListener('click', () => window.openDeleteModal(btn.dataset.pubDelete, 'publication'));
     });
+    container.querySelectorAll('[data-pub-up]').forEach(btn => {
+      btn.addEventListener('click', () => window.movePub(btn.dataset.pubUp, -1));
+    });
+    container.querySelectorAll('[data-pub-down]').forEach(btn => {
+      btn.addEventListener('click', () => window.movePub(btn.dataset.pubDown, 1));
+    });
   }
+
+  window.movePub = async function(id, direction) {
+    const p = publications.find(x => x.id === id);
+    if (!p) return;
+    const groupItems = publications
+      .filter(x => x.type === p.type)
+      .sort((a, b) => (a.order ?? 99) - (b.order ?? 99));
+    const idx = groupItems.findIndex(x => x.id === id);
+    const swapIdx = idx + direction;
+    if (swapIdx < 0 || swapIdx >= groupItems.length) return;
+    const other = groupItems[swapIdx];
+    const pOrder = p.order ?? idx;
+    const otherOrder = other.order ?? swapIdx;
+    try {
+      await updateDoc(doc(db, 'publications', p.id), { order: otherOrder });
+      await updateDoc(doc(db, 'publications', other.id), { order: pOrder });
+      await loadPublications();
+    } catch (e) {
+      alert('Error reordering: ' + e.message);
+    }
+  };
 
   window.openPubModal = function() {
     editingPubId = null;
