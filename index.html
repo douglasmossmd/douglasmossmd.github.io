@@ -82,6 +82,23 @@
     .add-icon { width: 32px; height: 32px; border-radius: 50%; background: var(--gray-100); display: flex; align-items: center; justify-content: center; font-size: 20px; color: var(--gray-400); line-height: 1; }
     .add-card:hover .add-icon { background: var(--maroon-light); color: var(--maroon); }
 
+    .pub-group { margin-bottom: 1.75rem; }
+    .pub-group:last-child { margin-bottom: 0; }
+    .pub-group-title { font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--gray-400); margin-bottom: 0.75rem; }
+    .pub-list { display: flex; flex-direction: column; gap: 8px; }
+    .pub-item { background: var(--white); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px 14px; }
+    .pub-citation { font-size: 13.5px; color: var(--text); line-height: 1.65; }
+    .pub-citation .pub-authors { color: var(--text-muted); }
+    .pub-citation .pub-title { color: var(--gray-800); font-weight: 500; }
+    .pub-citation a.pub-title { color: var(--maroon); text-decoration: none; }
+    .pub-citation a.pub-title:hover { text-decoration: underline; }
+    .pub-citation .pub-venue { color: var(--text-muted); }
+    .pub-admin-btns { display: flex; gap: 6px; padding-top: 8px; margin-top: 8px; border-top: 1px solid var(--gray-100); }
+    .pub-add-row { border: 1.5px dashed var(--gray-200); border-radius: var(--radius-sm); padding: 12px 14px; display: flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer; transition: border-color 0.15s, background 0.15s; }
+    .pub-add-row:hover { border-color: var(--maroon); background: var(--maroon-light); }
+    .pub-add-row span { font-size: 13px; color: var(--text-muted); font-weight: 500; }
+    .pub-add-row:hover span { color: var(--maroon); }
+
     .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.35); z-index: 200; align-items: center; justify-content: center; padding: 1rem; }
     .modal-overlay.open { display: flex; }
     .modal { background: var(--white); border-radius: var(--radius); padding: 2rem; width: 100%; max-width: 480px; box-shadow: 0 8px 32px rgba(0,0,0,0.12); }
@@ -123,6 +140,7 @@
       <nav>
         <a href="#dashboard">Dashboard</a>
         <a href="#projects">Projects</a>
+        <a href="#publications">Publications</a>
         <a href="mailto:dougiem92@gmail.com">Contact</a>
       </nav>
       <button class="admin-btn" id="adminBtn" onclick="window.toggleAdmin && window.toggleAdmin()">Edit mode</button>
@@ -187,6 +205,15 @@
       <div class="loading-state">Loading projects...</div>
     </div>
   </div>
+
+  <div id="publications" style="margin-top: 2.5rem;">
+    <div class="section-header">
+      <span class="section-title">Publications</span>
+    </div>
+    <div id="pubGroups">
+      <div class="loading-state">Loading publications...</div>
+    </div>
+  </div>
 </main>
 
 <footer>Douglas Moss, MD · Emergency Medicine · douglasmossmd.com</footer>
@@ -226,10 +253,45 @@
   </div>
 </div>
 
+<!-- Publication Add / Edit Modal -->
+<div class="modal-overlay" id="pubModalOverlay">
+  <div class="modal">
+    <h3 id="pubModalTitle">Add a publication</h3>
+    <div class="form-group">
+      <label>Type</label>
+      <select id="pType">
+        <option value="manuscript">Peer-reviewed manuscript</option>
+        <option value="abstract">Peer-reviewed abstract / presentation</option>
+        <option value="invited">Invited talk / media</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Authors *</label>
+      <input type="text" id="pAuthors" placeholder="e.g. Moss D, et al." />
+    </div>
+    <div class="form-group">
+      <label>Title *</label>
+      <input type="text" id="pTitle" placeholder="Title of the paper, abstract, or talk" />
+    </div>
+    <div class="form-group">
+      <label>Venue / details</label>
+      <input type="text" id="pVenue" placeholder="e.g. West J Emerg Med. 2025." />
+    </div>
+    <div class="form-group">
+      <label>Link (optional)</label>
+      <input type="url" id="pLink" placeholder="DOI / PubMed / article URL" />
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="window.closePubModal && window.closePubModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="window.savePublication && window.savePublication()">Save publication</button>
+    </div>
+  </div>
+</div>
+
 <!-- Delete Confirm Modal -->
 <div class="modal-overlay" id="deleteOverlay">
   <div class="modal" style="max-width:380px;text-align:center;">
-    <h3 style="margin-bottom:0.5rem;">Delete this project?</h3>
+    <h3 id="deleteTitle" style="margin-bottom:0.5rem;">Delete this item?</h3>
     <p style="font-size:13px;color:#6b6966;margin-bottom:1.5rem;">This can't be undone.</p>
     <div class="modal-footer" style="justify-content:center;">
       <button class="btn btn-outline" onclick="document.getElementById('deleteOverlay').classList.remove('open')">Cancel</button>
@@ -259,12 +321,32 @@
   let projects = [];
   let editingId = null;
   let deleteTargetId = null;
+  let deleteTargetType = 'project';
+
+  let publications = [];
+  let editingPubId = null;
 
   const STATUS = {
     live:    { dot: '',            label: 'Live',           color: '#3b9c3b' },
     dev:     { dot: 'dot-dev',     label: 'In development', color: '#e09020' },
     concept: { dot: 'dot-concept', label: 'Concept',        color: '#9c9a94' },
   };
+
+  const PUB_TYPES = [
+    { key: 'manuscript', label: 'Peer-Reviewed Manuscripts' },
+    { key: 'abstract',   label: 'Peer-Reviewed Abstracts & Presentations' },
+    { key: 'invited',    label: 'Invited Talks & Media' },
+  ];
+
+  const PUB_SEED = [
+    { type: 'manuscript', authors: 'Moss D, et al.', title: 'Retrospective Analysis of Disparities in Timing of Prehospital and Emergency Department Pain Management by Sex and Age.', venue: 'West J Emerg Med.', link: 'http://dx.doi.org/10.5811/westjem.47072', order: 0 },
+    { type: 'manuscript', authors: 'Schaufel M, Moss D, et al.', title: 'Better Together: Long-term Behaviors and Perspectives after a Practitioner–Family Writing Intervention in Clinical Practice.', venue: 'Perm J. 2021;25:20.250.', link: '', order: 1 },
+    { type: 'manuscript', authors: 'Thoele DG, Gunalp C, Baran D, Harris J, Moss D, et al.', title: 'Health Care Practitioners and Families Writing Together: The Three Minute Mental Makeover.', venue: 'Perm J. 2020;24:19.056.', link: '', order: 2 },
+    { type: 'abstract', authors: 'Moss D, et al.', title: 'Delayed Analgesia in Geriatric Patients with Fractures: Mayo Clinic Emergency Department.', venue: 'Acad Emerg Med. 2024;31(S1):212–213.', link: '', order: 0 },
+    { type: 'abstract', authors: 'Moss D, et al.', title: 'Delayed Analgesia in Geriatric Fractures.', venue: 'Presented at: Society for Academic Emergency Medicine (SAEM) Annual Meeting; 2024; Phoenix, AZ.', link: '', order: 1 },
+    { type: 'abstract', authors: 'Moss D, et al.', title: 'Successful ECMO in Out-of-Hospital Cardiac Arrest.', venue: 'Mayo Clinic Extracorporeal Life Support (ECLS) Conference; 2023; Rochester, MN. Oral presentation.', link: '', order: 2 },
+    { type: 'invited', authors: '', title: '"Chart-onomics."', venue: 'Always On EM Podcast; 2024. Guest expert discussion on ED documentation, coding, and billing optimization.', link: '', order: 0 },
+  ];
 
   const SEED = [
     { name: 'FAERS Drug Safety Explorer', desc: "A Booth School data visualization project analyzing 1.5M FDA adverse event reports from 2025, with a focus on GLP-1 drugs (Ozempic, Wegovy, Mounjaro). Built as a five-panel Tableau/Plotly dashboard suite plus an interactive web portal where clinicians can look up any drug's real-world safety profile in seconds. Co-authored with Livie Anastasya, BUS 32130, Spring 2026.", status: 'live', tags: ['Python', 'Tableau', 'Data Viz', 'FDA FAERS'], link: 'https://douglasmossmd.github.io/faers-drug-safety-data-viz/drug_safety_explorer.html', order: 0 },
@@ -347,9 +429,146 @@
       btn.addEventListener('click', () => window.openEditModal(btn.dataset.edit));
     });
     grid.querySelectorAll('[data-delete]').forEach(btn => {
-      btn.addEventListener('click', () => window.openDeleteModal(btn.dataset.delete));
+      btn.addEventListener('click', () => window.openDeleteModal(btn.dataset.delete, 'project'));
     });
   }
+
+  async function loadPublications() {
+    try {
+      const snap = await getDocs(collection(db, 'publications'));
+      publications = [];
+      snap.forEach(d => publications.push({ id: d.id, ...d.data() }));
+
+      if (publications.length === 0) {
+        for (const p of PUB_SEED) await addDoc(collection(db, 'publications'), p);
+        return loadPublications();
+      }
+      renderPublications();
+    } catch (e) {
+      document.getElementById('pubGroups').innerHTML =
+        `<div class="error-state">Error loading publications: ${e.message}</div>`;
+    }
+  }
+
+  function buildPubItem(p) {
+    const titleHtml = p.link
+      ? `<a class="pub-title" href="${p.link}" target="_blank">${p.title}</a>`
+      : `<span class="pub-title">${p.title}</span>`;
+    const authorsHtml = p.authors ? `<span class="pub-authors">${p.authors}</span> ` : '';
+    const adminBtns = isAdmin ? `
+      <div class="pub-admin-btns">
+        <button class="card-edit-btn" data-pub-edit="${p.id}">Edit</button>
+        <button class="card-delete-btn" data-pub-delete="${p.id}">Delete</button>
+      </div>` : '';
+
+    const div = document.createElement('div');
+    div.className = 'pub-item';
+    div.dataset.id = p.id;
+    div.innerHTML = `
+      <p class="pub-citation">${authorsHtml}${titleHtml} <span class="pub-venue">${p.venue || ''}</span></p>
+      ${adminBtns}`;
+    return div;
+  }
+
+  function renderPublications() {
+    const container = document.getElementById('pubGroups');
+    container.innerHTML = '';
+
+    PUB_TYPES.forEach(groupDef => {
+      const items = publications
+        .filter(p => p.type === groupDef.key)
+        .sort((a, b) => (a.order ?? 99) - (b.order ?? 99));
+      if (items.length === 0 && !isAdmin) return;
+
+      const groupDiv = document.createElement('div');
+      groupDiv.className = 'pub-group';
+      const titleEl = document.createElement('div');
+      titleEl.className = 'pub-group-title';
+      titleEl.textContent = groupDef.label;
+      groupDiv.appendChild(titleEl);
+
+      const listEl = document.createElement('div');
+      listEl.className = 'pub-list';
+      items.forEach(p => listEl.appendChild(buildPubItem(p)));
+      groupDiv.appendChild(listEl);
+      container.appendChild(groupDiv);
+    });
+
+    if (isAdmin) {
+      const addRow = document.createElement('div');
+      addRow.className = 'pub-add-row';
+      addRow.innerHTML = '<div class="add-icon" style="width:24px;height:24px;font-size:16px;">+</div><span>Add publication</span>';
+      addRow.onclick = () => window.openPubModal();
+      container.appendChild(addRow);
+    }
+
+    container.querySelectorAll('[data-pub-edit]').forEach(btn => {
+      btn.addEventListener('click', () => window.openEditPubModal(btn.dataset.pubEdit));
+    });
+    container.querySelectorAll('[data-pub-delete]').forEach(btn => {
+      btn.addEventListener('click', () => window.openDeleteModal(btn.dataset.pubDelete, 'publication'));
+    });
+  }
+
+  window.openPubModal = function() {
+    editingPubId = null;
+    document.getElementById('pubModalTitle').textContent = 'Add a publication';
+    document.getElementById('pType').value = 'manuscript';
+    document.getElementById('pAuthors').value = '';
+    document.getElementById('pTitle').value = '';
+    document.getElementById('pVenue').value = '';
+    document.getElementById('pLink').value = '';
+    document.getElementById('pubModalOverlay').classList.add('open');
+    setTimeout(() => document.getElementById('pAuthors').focus(), 50);
+  };
+
+  window.openEditPubModal = function(id) {
+    const p = publications.find(x => x.id === id);
+    if (!p) return;
+    editingPubId = id;
+    document.getElementById('pubModalTitle').textContent = 'Edit publication';
+    document.getElementById('pType').value = p.type || 'manuscript';
+    document.getElementById('pAuthors').value = p.authors || '';
+    document.getElementById('pTitle').value = p.title || '';
+    document.getElementById('pVenue').value = p.venue || '';
+    document.getElementById('pLink').value = p.link || '';
+    document.getElementById('pubModalOverlay').classList.add('open');
+    setTimeout(() => document.getElementById('pAuthors').focus(), 50);
+  };
+
+  window.closePubModal = function() {
+    document.getElementById('pubModalOverlay').classList.remove('open');
+    editingPubId = null;
+  };
+
+  window.savePublication = async function() {
+    const title = document.getElementById('pTitle').value.trim();
+    if (!title) { alert('Please fill in the title.'); return; }
+    const type = document.getElementById('pType').value;
+    const data = {
+      type,
+      authors: document.getElementById('pAuthors').value.trim(),
+      title,
+      venue: document.getElementById('pVenue').value.trim(),
+      link: document.getElementById('pLink').value.trim(),
+    };
+    try {
+      if (editingPubId) {
+        await updateDoc(doc(db, 'publications', editingPubId), data);
+      } else {
+        data.order = publications.filter(p => p.type === type).length;
+        await addDoc(collection(db, 'publications'), data);
+      }
+      window.closePubModal();
+      await loadPublications();
+    } catch (e) {
+      alert('Error saving: ' + e.message);
+    }
+  };
+
+  document.getElementById('pubModalOverlay').addEventListener('click', function(e) {
+    if (e.target === this) window.closePubModal();
+  });
 
   // SHA-256 hash of the edit-mode PIN. Not shown in plain text in the source.
   const PIN_HASH = '30e2fdaa7748f8af49b4725199b69e939dc835bd2e4f37d40924da88132161f1';
@@ -365,6 +584,7 @@
     btn.textContent = isAdmin ? 'Exit edit mode' : 'Edit mode';
     btn.classList.toggle('active', isAdmin);
     renderProjects();
+    renderPublications();
   }
 
   window.toggleAdmin = function() {
@@ -456,18 +676,28 @@
     }
   };
 
-  window.openDeleteModal = function(id) {
+  window.openDeleteModal = function(id, type) {
     deleteTargetId = id;
+    deleteTargetType = type || 'project';
+    document.getElementById('deleteTitle').textContent =
+      deleteTargetType === 'publication' ? 'Delete this publication?' : 'Delete this project?';
     document.getElementById('deleteOverlay').classList.add('open');
   };
 
   window.confirmDelete = async function() {
     if (!deleteTargetId) return;
     try {
-      await deleteDoc(doc(db, 'projects', deleteTargetId));
-      document.getElementById('deleteOverlay').classList.remove('open');
-      deleteTargetId = null;
-      await loadProjects();
+      if (deleteTargetType === 'publication') {
+        await deleteDoc(doc(db, 'publications', deleteTargetId));
+        document.getElementById('deleteOverlay').classList.remove('open');
+        deleteTargetId = null;
+        await loadPublications();
+      } else {
+        await deleteDoc(doc(db, 'projects', deleteTargetId));
+        document.getElementById('deleteOverlay').classList.remove('open');
+        deleteTargetId = null;
+        await loadProjects();
+      }
     } catch (e) {
       alert('Error deleting: ' + e.message);
     }
@@ -482,6 +712,7 @@
   document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') {
       window.closeModal();
+      window.closePubModal();
       document.getElementById('deleteOverlay').classList.remove('open');
       window.closePinModal();
     }
@@ -499,6 +730,7 @@
   }, 8000);
 
   loadProjects();
+  loadPublications();
 </script>
 
 </body>
