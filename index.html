@@ -152,16 +152,17 @@
   }
 </script>
 
-<!-- Edit Mode PIN Gate -->
+<!-- Edit Mode Login (real Firebase Auth, not a client-side secret) -->
 <div class="modal-overlay" id="pinOverlay">
   <div class="modal" style="max-width:340px;text-align:center;">
-    <h3 style="margin-bottom:0.5rem;">Enter PIN</h3>
-    <p style="font-size:13px;color:#6b6966;margin-bottom:1.25rem;">Enter your PIN to enable edit mode.</p>
-    <input id="pinInput" type="password" inputmode="numeric" placeholder="PIN" autocomplete="off" style="width:100%;padding:9px 12px;font-size:14px;font-family:inherit;border:1px solid #e0ded8;border-radius:7px;outline:none;margin-bottom:10px;color:#1a1a18;text-align:center;letter-spacing:0.15em;" />
-    <div id="pinError" style="font-size:12px;color:#993c1d;margin-bottom:10px;display:none;">Incorrect PIN. Try again.</div>
+    <h3 style="margin-bottom:0.5rem;">Sign in to edit</h3>
+    <p style="font-size:13px;color:#6b6966;margin-bottom:1.25rem;">Sign in with your admin account to enable edit mode.</p>
+    <input id="loginEmail" type="email" placeholder="Email" autocomplete="username" style="width:100%;padding:9px 12px;font-size:14px;font-family:inherit;border:1px solid #e0ded8;border-radius:7px;outline:none;margin-bottom:10px;color:#1a1a18;" />
+    <input id="loginPassword" type="password" placeholder="Password" autocomplete="current-password" style="width:100%;padding:9px 12px;font-size:14px;font-family:inherit;border:1px solid #e0ded8;border-radius:7px;outline:none;margin-bottom:10px;color:#1a1a18;" />
+    <div id="pinError" style="font-size:12px;color:#993c1d;margin-bottom:10px;display:none;">Incorrect email or password.</div>
     <div class="modal-footer" style="justify-content:center;">
       <button class="btn btn-outline" onclick="window.closePinModal && window.closePinModal()">Cancel</button>
-      <button class="btn btn-primary" onclick="window.checkPin && window.checkPin()">Unlock</button>
+      <button class="btn btn-primary" onclick="window.checkPin && window.checkPin()">Sign in</button>
     </div>
   </div>
 </div>
@@ -337,6 +338,8 @@
   import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
   import { getFirestore, collection, getDocs, addDoc, updateDoc, deleteDoc, doc, runTransaction }
     from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+  import { getAuth, signInWithEmailAndPassword, signOut, setPersistence, browserSessionPersistence }
+    from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyCoPcSKEQd12eyp6fN9D2gYm7xJX24bGG0",
@@ -349,6 +352,8 @@
 
   const app = initializeApp(firebaseConfig);
   const db = getFirestore(app);
+  const auth = getAuth(app);
+  setPersistence(auth, browserSessionPersistence); // require sign-in again each new browser session
 
   let isAdmin = false;
   let projects = [];
@@ -622,14 +627,6 @@
     if (e.target === this) window.closePubModal();
   });
 
-  // SHA-256 hash of the edit-mode PIN. Not shown in plain text in the source.
-  const PIN_HASH = '30e2fdaa7748f8af49b4725199b69e939dc835bd2e4f37d40924da88132161f1';
-
-  async function sha256(text) {
-    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
-    return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
-  }
-
   function setAdmin(on) {
     isAdmin = on;
     const btn = document.getElementById('adminBtn');
@@ -640,36 +637,40 @@
   }
 
   window.toggleAdmin = function() {
-    if (isAdmin) { setAdmin(false); return; }
-    if (sessionStorage.getItem('dm_edit_auth') === 'ok') { setAdmin(true); return; }
+    if (isAdmin) {
+      signOut(auth);
+      setAdmin(false);
+      return;
+    }
+    if (auth.currentUser) { setAdmin(true); return; }
     document.getElementById('pinOverlay').classList.add('open');
-    setTimeout(() => document.getElementById('pinInput').focus(), 50);
+    setTimeout(() => document.getElementById('loginEmail').focus(), 50);
   };
 
   window.closePinModal = function() {
     document.getElementById('pinOverlay').classList.remove('open');
-    document.getElementById('pinInput').value = '';
+    document.getElementById('loginPassword').value = '';
     document.getElementById('pinError').style.display = 'none';
   };
 
   window.checkPin = async function() {
-    const val = document.getElementById('pinInput').value;
-    const hash = await sha256(val);
-    if (hash === PIN_HASH) {
-      sessionStorage.setItem('dm_edit_auth', 'ok');
+    const email = document.getElementById('loginEmail').value.trim();
+    const password = document.getElementById('loginPassword').value;
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
       window.closePinModal();
       setAdmin(true);
-    } else {
+    } catch (e) {
       document.getElementById('pinError').style.display = 'block';
-      document.getElementById('pinInput').value = '';
-      document.getElementById('pinInput').focus();
+      document.getElementById('loginPassword').value = '';
+      document.getElementById('loginPassword').focus();
     }
   };
 
   document.getElementById('pinOverlay').addEventListener('click', function(e) {
     if (e.target === this) window.closePinModal();
   });
-  document.getElementById('pinInput').addEventListener('keydown', function(e) {
+  document.getElementById('loginPassword').addEventListener('keydown', function(e) {
     if (e.key === 'Enter') window.checkPin();
   });
 
