@@ -168,7 +168,7 @@
 
 <header>
   <div class="header-inner">
-    <a class="logo" href="#">Douglas Moss, MD</a>
+    <a class="logo" href="#" id="headerLogo">Douglas Moss, MD</a>
     <div class="header-right">
       <nav>
         <a href="#dashboard">Dashboard</a>
@@ -928,6 +928,7 @@
   }
 
   function renderProfile() {
+    document.getElementById('headerLogo').textContent = profile.name || PROFILE_DEFAULT.name;
     document.getElementById('heroName').textContent = profile.name || PROFILE_DEFAULT.name;
     document.getElementById('heroTitle').textContent = profile.title || '';
     document.getElementById('heroBio').textContent = profile.bio || '';
